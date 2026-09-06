@@ -19,7 +19,8 @@ const {
   registerShortcuts,
   registerFallbackShortcut,
   unregisterFallbackShortcut,
-  getShortcuts
+  getShortcuts,
+  applyOverrides
 } = require('./shortcuts');
 const { createManagerModule } = require('./manager');
 
@@ -98,7 +99,12 @@ function createManager() {
       renameWorkspace: (id, name) => renameWorkspace(id, name),
       removeWorkspace: (id) => removeWorkspace(id),
       moveNoteToWorkspace: (noteId, workspaceId) => moveNoteToWorkspace(noteId, workspaceId),
-      importNotes: (records, mode) => importNotes(records, mode)
+      importNotes: (records, mode) => importNotes(records, mode),
+      onShortcutsUpdated: () => {
+        unregisterFallbackShortcut(globalShortcut);
+        registerFallbackShortcut(globalShortcut, () => createNoteNearCursor());
+        updateTrayMenu();
+      }
     }
   });
 }
@@ -536,6 +542,7 @@ if (!gotLock) {
     // is the earliest safe point to construct the (synchronous) store and wire
     // up the manager that depends on it.
     store = createStore();
+    applyOverrides(store.getShortcutOverrides());
     manager = createManager();
 
     setupTray();

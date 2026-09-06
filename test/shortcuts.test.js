@@ -9,6 +9,7 @@ const {
   unregisterFallbackShortcut,
   shortcutNameForInput,
   getShortcuts,
+  applyOverrides,
   BINDINGS,
   FALLBACK_BINDING
 } = require('../shortcuts');
@@ -159,4 +160,31 @@ test('formats accelerators the way this platform writes them', () => {
     platform.isMac ? '⌘Q' : 'Ctrl+Q'
   );
   assert.equal(platform.formatAccelerator(''), '');
+});
+
+test('getShortcuts reflects custom overrides when provided', () => {
+  const overrides = { newNote: 'CommandOrControl+Shift+Q' };
+  const list = getShortcuts(overrides);
+  const newNote = list.find((s) => s.id === 'newNote');
+  assert.equal(newNote.accelerator, 'CommandOrControl+Shift+Q');
+  assert.equal(newNote.isCustom, true);
+  assert.equal(newNote.display, platform.formatAccelerator('CommandOrControl+Shift+Q'));
+
+  // Other shortcuts remain untouched
+  const managerShortcut = list.find((s) => s.id === 'openManager');
+  assert.equal(managerShortcut.accelerator, 'CommandOrControl+Shift+M');
+  assert.equal(managerShortcut.isCustom, false);
+});
+
+test('applyOverrides updates shortcut matcher tables dynamically', () => {
+  try {
+    applyOverrides({ newNote: 'CommandOrControl+Shift+Q' });
+    assert.equal(shortcutNameForInput(shortcutInput('Q')), 'newNote');
+    assert.equal(shortcutNameForInput(shortcutInput('N')), null);
+  } finally {
+    // Reset back to defaults
+    applyOverrides({});
+    assert.equal(shortcutNameForInput(shortcutInput('N')), 'newNote');
+    assert.equal(shortcutNameForInput(shortcutInput('Q')), null);
+  }
 });

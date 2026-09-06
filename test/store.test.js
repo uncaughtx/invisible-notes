@@ -363,3 +363,24 @@ test('replaceAll replaces notes but preserves settings and workspaces', () => {
   assert.equal(store.getWorkspace(ws.id).name, 'Work');
   assert.equal(store.activeWorkspaceId(), DEFAULT_WORKSPACE_ID);
 });
+
+test('persists, updates and clears shortcut overrides in NoteStore', () => {
+  const dir = storeDir();
+  const store1 = openStore(dir);
+  assert.deepEqual(store1.getShortcutOverrides(), {});
+
+  store1.setShortcutOverride('newNote', 'CommandOrControl+Shift+X');
+  assert.equal(store1.getShortcutOverrides().newNote, 'CommandOrControl+Shift+X');
+  store1.flush();
+
+  // Reload from disk into a fresh instance
+  const store2 = openStore(dir);
+  assert.equal(store2.getShortcutOverrides().newNote, 'CommandOrControl+Shift+X');
+
+  store2.clearShortcutOverride('newNote');
+  assert.equal(store2.getShortcutOverrides().newNote, undefined);
+  store2.flush();
+
+  const store3 = openStore(dir);
+  assert.deepEqual(store3.getShortcutOverrides(), {});
+});

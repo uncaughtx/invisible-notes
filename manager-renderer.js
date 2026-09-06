@@ -12,7 +12,8 @@ const ICONS = {
   eyeOff: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22"/></svg>',
   trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
   notes: '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12l4 4v12H4z"/><path d="M16 4v4h4"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>',
-  move: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h6"/><path d="m17 15 3 3-3 3"/><path d="M13 18h7"/></svg>'
+  move: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h6"/><path d="m17 15 3 3-3 3"/><path d="M13 18h7"/></svg>',
+  edit: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'
 };
 
 const listEl = document.getElementById('list');
@@ -318,6 +319,98 @@ function shortcutDisplay(id) {
   return match ? match.display : '';
 }
 
+let recordingShortcutId = null;
+let recordingCleanup = null;
+
+function cancelRecording() {
+  if (recordingCleanup) {
+    recordingCleanup();
+    recordingCleanup = null;
+  }
+  recordingShortcutId = null;
+  renderShortcuts(shortcuts);
+}
+
+function electronKeyFromEvent(e) {
+  // If it's only a modifier key, return null so we wait for the actual non-modifier key
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
+
+  // Key codes and names
+  let key = e.key;
+  if (e.code && e.code.startsWith('Key')) {
+    key = e.code.slice(3).toUpperCase();
+  } else if (e.code && e.code.startsWith('Digit')) {
+    key = e.code.slice(5);
+  } else if (key.length === 1) {
+    key = key.toUpperCase();
+  }
+
+  return key;
+}
+
+function startRecording(shortcut, kbdEl) {
+  if (recordingShortcutId === shortcut.id) {
+    cancelRecording();
+    return;
+  }
+  if (recordingShortcutId) {
+    cancelRecording();
+  }
+
+  recordingShortcutId = shortcut.id;
+  kbdEl.classList.add('kbd-recording');
+  kbdEl.textContent = 'Press keys…';
+
+  const onKeyDown = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === 'Escape') {
+      cancelRecording();
+      return;
+    }
+
+    const key = electronKeyFromEvent(e);
+    if (!key) return; // Modifier pressed alone, wait for companion key
+
+    // Build the accelerator.
+    // For app-scoped shortcuts: app matcher expects CommandOrControl + Shift + Key.
+    // For global shortcuts: CommandOrControl + Alt + Shift + Key or custom modifiers.
+    const parts = [];
+    if (e.ctrlKey || e.metaKey) {
+      parts.push('CommandOrControl');
+    }
+    if (shortcut.scope === 'global') {
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+      // If user didn't press CommandOrControl or Alt, require at least CommandOrControl
+      if (!parts.includes('CommandOrControl') && !parts.includes('Alt')) {
+        parts.unshift('CommandOrControl');
+      }
+    } else {
+      // App-scoped shortcuts: require CommandOrControl+Shift
+      if (!parts.includes('CommandOrControl')) parts.push('CommandOrControl');
+      if (!parts.includes('Shift')) parts.push('Shift');
+    }
+
+    parts.push(key);
+    const newAccelerator = parts.join('+');
+
+    cancelRecording();
+    const updated = await window.manager.setShortcut(shortcut.id, newAccelerator);
+    if (Array.isArray(updated)) {
+      shortcuts = updated;
+      renderShortcuts(shortcuts);
+      render();
+    }
+  };
+
+  document.addEventListener('keydown', onKeyDown, { capture: true });
+  recordingCleanup = () => {
+    document.removeEventListener('keydown', onKeyDown, { capture: true });
+  };
+}
+
 function shortcutRow(shortcut) {
   const row = document.createElement('div');
   row.className = 'sc-row';
@@ -338,10 +431,48 @@ function shortcutRow(shortcut) {
 
   const keys = document.createElement('kbd');
   keys.className = 'sc-keys';
-  keys.textContent = shortcut.display;
+  if (recordingShortcutId === shortcut.id) {
+    keys.classList.add('kbd-recording');
+    keys.textContent = 'Press keys…';
+  } else {
+    keys.textContent = shortcut.display;
+  }
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'sc-actions';
+
+  if (shortcut.isCustom) {
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'sc-reset-btn';
+    resetBtn.textContent = 'Reset';
+    resetBtn.title = 'Reset to default';
+    resetBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      cancelRecording();
+      const updated = await window.manager.resetShortcut(shortcut.id);
+      if (Array.isArray(updated)) {
+        shortcuts = updated;
+        renderShortcuts(shortcuts);
+        render();
+      }
+    });
+    actionsEl.appendChild(resetBtn);
+  }
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'icon-btn sc-edit-btn';
+  editBtn.title = recordingShortcutId === shortcut.id ? 'Cancel recording' : 'Change shortcut';
+  editBtn.setAttribute('aria-label', `Change shortcut for ${shortcut.label}`);
+  editBtn.innerHTML = ICONS.edit;
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startRecording(shortcut, keys);
+  });
+  actionsEl.appendChild(editBtn);
 
   row.appendChild(text);
   row.appendChild(keys);
+  row.appendChild(actionsEl);
   return row;
 }
 
@@ -403,6 +534,7 @@ async function openShortcuts() {
 }
 
 function closeShortcuts() {
+  cancelRecording();
   if (shortcutsEl.hidden) return;
   for (const el of behindTheSheet) el.inert = false;
   shortcutsEl.hidden = true;

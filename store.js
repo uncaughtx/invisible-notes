@@ -93,7 +93,7 @@ function emptyStore() {
   });
   return {
     version: STORE_VERSION,
-    settings: { activeWorkspace: workspace.id },
+    settings: { activeWorkspace: workspace.id, shortcuts: {} },
     workspaces: [workspace],
     notes: []
   };
@@ -410,6 +410,27 @@ class NoteStore {
 
   settings() {
     return this.data.settings;
+  }
+
+  // ---------- Shortcut Overrides (issue #5) ----------
+  getShortcutOverrides() {
+    return this.data.settings?.shortcuts || {};
+  }
+
+  setShortcutOverride(id, accelerator) {
+    if (!this.data.settings) this.data.settings = {};
+    if (!this.data.settings.shortcuts) this.data.settings.shortcuts = {};
+    this.data.settings.shortcuts[id] = accelerator;
+    this.save();
+    return this.data.settings.shortcuts;
+  }
+
+  clearShortcutOverride(id) {
+    if (this.data.settings?.shortcuts && id in this.data.settings.shortcuts) {
+      delete this.data.settings.shortcuts[id];
+      this.save();
+    }
+    return this.data.settings?.shortcuts || {};
   }
 
   workspaces() {
